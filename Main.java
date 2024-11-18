@@ -1,723 +1,151 @@
-import java.io.*;
+import java.util.Arrays;
 import java.util.Random;
+import java.util.Scanner;
 
 public class Main {
 
-    public static int firstMaxDepth = 0;
-    public static int totalDRs = 0;
-    public static int optimal = 31;
-    public static int[] cO = new int[] {0, 0, 0, 0, 0, 0, 0, 0};
-    public static boolean[] eO = new boolean[] {true, true, true, true, true, true, true, true, true, true, true, true};
-    public static boolean[] eqO = new boolean[] {false, false, false, false, true, true, true, true, false, false, false, false};
-    public static int[] cP = new int[] {0, 1, 2, 3, 4, 5, 6, 7};
-    public static int[] eP = new int[] {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
-    public static int[] coDistTable = new int[2187];
-    public static int[] eoDistTable = new int[2048];
-    public static int[] cpDistTable = new int[40320];
-    public static int[] epDistTable = new int[40320];
-    public static int[][] coMoveTable = new int[2187][18];
-    public static int[][] eoMoveTable = new int[2048][18];
-    public static int[][] eqoMoveTable = new int[495][18];
-    public static int[][] cpMoveTable = new int[40320][10];
-    public static int[][] epMoveTable = new int[40320][10];
-    public static int[][] eqpMoveTable = new int[24][10];
-    public static int[] solution = new int[31];
+    static int[] cO = new int[8];
+    static boolean[] eO = new boolean[] {true, true, true, true, true, true, true, true, true, true, true, true};
+    static int[] cP = new int[] {0, 1, 2, 3, 4, 5, 6, 7};
+    static int[] eP = new int[] {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    static int[] coDistTable = new int[2187];
+    static int[] eoDistTable = new int[2048];
+    static int[] cpDistTable = new int[40320];
+    static int[] epDistTable = new int[40320];
+    static int[][] coMoveTable = new int[2187][18];
+    static int[][] eoMoveTable = new int[2048][18];
+    static int[][] eqlMoveTable = new int[495][18];
+    static int[][] cpMoveTable = new int[40320][18];
+    static int[][] epMoveTable = new int[40320][10];
+    static int[][] eqpMoveTable = new int[24][10];
+    static int[][] helperTable = new int[11880][18];
+    static int[][] transitionTable = new int[11880][24];
+    static int optimal = 24;
+    static long time;
+    static String solution;
 
     public static void main(String[] args) {
 
-        //Create Tables (if they haven't already been made)
+        //Create Tables
         createTables();
 
-        //Import tables
-        coDistTable = importDistanceTable("coDist.txt", 2187);
-        eoDistTable = importDistanceTable("eoDist.txt", 2048);
-        cpDistTable = importDistanceTable("cpDist.txt", 40320);
-        epDistTable = importDistanceTable("epDist.txt", 40320);
-        coMoveTable = importMoveTable("coMove.txt", 2187, 18);
-        eoMoveTable = importMoveTable("eoMove.txt", 2048, 18);
-        eqoMoveTable = importMoveTable("eqoMove.txt", 495, 18);
-        cpMoveTable = importMoveTable("cpMove.txt", 40320, 10);
-        epMoveTable = importMoveTable("epMove.txt", 40320, 10);
-        eqpMoveTable = importMoveTable("eqpMove.txt", 24, 10);
+        //Get Scramble
+        Scanner scan = new Scanner(System.in);  // Create a Scanner object
+        System.out.println("Enter scramble, E.g. R U' F2 B' L2 D (typing something invalid will generate a random scramble)");
+        String scramble = scan.nextLine();  // Read user input
+        if (!doAlgorithm(scramble)) {
+            scramble();
+        }
 
-        //generate scramble
-        scramble();
-
-        //draw scramble
+        //Draw Scramble
         drawState();
 
-        for (int i = 0; i < 31; i++) {
-            solution[i] = 18;
-        }
+        //Initialise moves
+        int[] moves = new int[optimal];
+        Arrays.fill(moves, 18);
 
-        //solve
-        for (int i = 0; i < 21; i++) {
-            firstMaxDepth = i;
-            totalDRs = 0;
-            reachDR(generateCOKey(cO), generateEOKey(eO), generateEqOKey(eqO), 18, 0, solution);
-            System.out.println("done depth " + i);
+        //Solve
+        for (int maxDepth = 9; maxDepth < 13; maxDepth++) {
+            System.out.println("Searching depth " + maxDepth + " DRs...");
+            time = System.currentTimeMillis();
+            boolean[] eqL = new boolean[12];
+            for (int axis = 0; axis < 3; axis++) {
+
+                //Get equator and helper locations from ep
+                for (int i = 0; i < 12; i++) {
+                    eqL[i] = (4 <= eP[i] && eP[i] <= 7);
+                }
+                int[][] helpers = getHelpers();
+
+                //Search
+                reachDR(getCOKey(cO), getEOKey(eO), getEqLKey(eqL), getPKey(cP), getHelperKey(helpers[0]), getHelperKey(helpers[1]), getHelperKey(helpers[2]), 18, 0, maxDepth, moves, axis);
+                nextAxis();
+            }
+            System.out.println("Searched all " + maxDepth + " move DRs");
         }
-        System.out.println("done");
+        System.out.println("Finished. Best solution found: " + solution + "(" + optimal + " moves)");
     }
 
-    //First Stage
-    public static boolean reachDR(int cO, int eO, int eq, int prev, int depth, int[] moves) {
-        if (prev < 18) {
-            cO = coMoveTable[cO][prev];
-            eO = eoMoveTable[eO][prev];
-            eq = eqoMoveTable[eq][prev];
-        }
+    //Creates distance and move tables
+    static void createTables() {
 
-        //checking if reached domino
-        boolean solved = cO == 0 && eO == 0 && eq == 425;
-        if (solved) {
-            if (depth == firstMaxDepth) {
-                totalDRs++;
-                //System.out.println("Domino reached in: " + depth + " moves");
-                int[] newCP = cP.clone();
-                int[] newEP = eP.clone();
-                for (int i = 0; i < firstMaxDepth; i++) {
-                    if (moves[i] == 18)
-                        break;
-                    newCP = moveCP(newCP, moves[i]);
-                    newEP = moveEP(newEP, moves[i]);
-                }
-                int[] newEQP = getEqP(newEP);
-                solveDR(generatePKey(newCP), generatePKey(condenseEP(newEP)), generatePKey(newEQP), 18, depth, moves);
-                //return true;
-            } else {
-                return false;
-            }
-        }
+        //Corner Orientation Move Table
+        createCOMoveTable(new int[8], 0);
 
-        if (depth + eoDistTable[eO] > firstMaxDepth || depth + coDistTable[cO] > firstMaxDepth) {
-            return false;
-        }
-        if (depth < firstMaxDepth) {
-            //i is ud, lr, bf
-            for (int i = 0; i < 3; i++) {
-                //j is ulb, drf
-                for (int j = 0; j < 2; j++) {
-                    //k is u, u2, u'
-                    for (int k = 0; k < 3; k++) {
-                        if (prev < 6 * i || prev > (6 * i) + (3 * j) + 2) {
-                            moves[depth] = (6 * i) + (3 * j) + k;
-                            moves[depth + 1] = 18;
-                            if (reachDR(cO, eO, eq, (6 * i) + (3 * j) + k, depth + 1, moves)) {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return false;
-    }
+        //Corner Orientation Distance Table
+        Arrays.fill(coDistTable, 6);
+        createCODistTable(0, 0);
 
-    //Second Stage
-    public static boolean solveDR(int cP, int eP, int eqP, int prev, int depth, int[] moves) {
-        if (prev < 18) {
-            cP = cpMoveTable[cP][prev];
-            eP = epMoveTable[eP][prev];
-            eqP = eqpMoveTable[eqP][prev];
-        }
+        //Edge Orientation Move Table
+        boolean[] edges = new boolean[12];
+        Arrays.fill(edges, true);
+        createEOMoveTable(edges, 0);
 
-        //checking if solved
-        boolean solved = cP == 0 && eP == 0 && eqP == 0;
-        if (solved && depth < optimal) {
-            optimal = depth;
-            System.out.println("Solution found in: " + depth + " moves");
-            System.out.println(convertToNotation(moves));
-        }
+        //Edge Orientation Distance Table
+        Arrays.fill(eoDistTable, 7);
+        createEODistTable(0, 0);
 
-        if (depth + cpDistTable[cP] > optimal - 1 || depth + epDistTable[eP] > optimal - 1) {
-            return false;
-        }
+        //Equator Location Move Table
+        createEqLMoveTable();
 
-        if (depth < optimal - 1) {
-            //iterate through moves U U2 U' D D2 D' L2 R2 B2 F2
-            //iterate through moves 0 1  2  3 4  5  6  7  8  9
-            for (int i = 0; i < 2; i++) {
-                for (int k = 0; k < 3; k++) {
-                    if (prev > (i * 3) + 2) {
-                        moves[depth] = (i * 3) + k;
-                        moves[depth + 1] = 18;
-                        if (solveDR(cP, eP, eqP, (i * 3) + k, depth + 1, moves)) {
-                            return true;
-                        }
-                    }
-                }
-                for (int k = 0; k < 2; k++) {
-                    if (prev < 6 + (i * 2) || prev > 6 + (i * 2) + k) {
-                        moves[depth] = 7 + (i * 6) + (k * 3);
-                        moves[depth + 1] = 18;
-                        if (solveDR(cP, eP, eqP, 6 + (i * 2) + k, depth + 1, moves)) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
-    //create tables from scratch
-    public static void createTables() {
-
-        //Corner Orientation Tables
-        for (int i = 0; i < 2187; i++) {
-            coDistTable[i] = -1;
-        }
-        coDistTable[0] = 0;
-        int[] corners = new int[] {0, 0, 0, 0, 0, 0, 0, 0};
-        iterateCO(corners, 0);
-
-        //Edge Orientation Tables
-        for (int i = 0; i < 2048; i++) {
-            eoDistTable[i] = -1;
-        }
-        eoDistTable[0] = 0;
-        boolean[] edges = new boolean[] {true, true, true, true, true, true, true, true, true, true, true, true};
-        iterateEO(edges, 0);
-
-        //Equator Orientation Move Table
-        iterateEqO();
-
-        //Corner & Edge Permutation Tables
-        for (int i = 0; i < 40320; i++) {
-            cpDistTable[i] = -1;
-            epDistTable[i] = -1;
-        }
-        cpDistTable[0] = 0;
-        epDistTable[0] = 0;
-        int[] pieces = new int[] {0, 1, 2, 3, 4, 5, 6, 7};
-        iterateP(pieces, 7);
+        //Corner & Edge Permutation Tables (includes Transition Table)
+        createPMoveTables(new int[] {0, 1, 2, 3, 4, 5, 6, 7}, 7);
+        Arrays.fill(cpDistTable, 13);
+        Arrays.fill(epDistTable, 8);
+        createCPDistTable(0,0);
+        createEPDistTable(0,0);
 
         //Equator Permutation Move Table
-        int[] eqP = new int[] {0, 1, 2, 3};
-        iterateEqP(eqP, 3);
+        createEqPMoveTable(new int[] {4, 5, 6, 7}, 3);
 
-        createDistanceTable("coDist.txt", coDistTable);
-        createDistanceTable("eoDist.txt", eoDistTable);
-        createDistanceTable("cpDist.txt", cpDistTable);
-        createDistanceTable("epDist.txt", epDistTable);
-        createMoveTable("coMove.txt", coMoveTable, 2187, 18);
-        createMoveTable("eoMove.txt", eoMoveTable, 2048, 18);
-        createMoveTable("eqoMove.txt", eqoMoveTable, 495, 18);
-        createMoveTable("cpMove.txt", cpMoveTable, 40320, 10);
-        createMoveTable("epMove.txt", epMoveTable, 40320, 10);
-        createMoveTable("eqpMove.txt", eqpMoveTable, 24, 10);
+        //Helper Move Table
+        createHelperTable();
     }
 
-    //Corner Orientation
-    public static void iterateCO(int[] cO, int count) {
-        if (count < 7) {
-            cO[count] = 0;
-            iterateCO(cO, count + 1);
-            cO[count] = 1;
-            iterateCO(cO, count + 1);
-            cO[count] = 2;
-            iterateCO(cO, count + 1);
-        } else if (count == 7) {
-            int tally = 0;
-            for (int i = 0; i < 7; i++) {
-                tally += cO[i];
-            }
-            cO[count] = (15 - tally) % 3;
-            if (coDistTable[generateCOKey(cO)] == -1) {
-                findCOSolution(cO, 18, 0, false, 7);
-            }
-            for (int i = 0; i < 18; i++) {
-                coMoveTable[generateCOKey(cO)][i] = generateCOKey(moveCO(cO, i));
-            }
-        }
-    }
-
-    public static int generateCOKey(int[] cO) {
-        int tally = 0;
-        for (int i = 0; i < 7; i++) {
-            tally += (int) (cO[i] * (Math.pow(3, i)));
-        }
-        return tally;
-    }
-
-    public static int findCOSolution(int[] cO, int prev, int depth, boolean move, int best) {
-        if (move) {
-            cO = moveCO(cO, prev);
-        }
-
-        int key = generateCOKey(cO);
-        if(coDistTable[key] != -1) {
-            //distance of current state
-            return coDistTable[key];
-        }
-
-        int value;
-        if (depth < best) {
-            //i is ud, lr, bf
-            for (int i = 0; i < 3; i++) {
-                //j is ulb, drf
-                for (int j = 0; j < 2; j++) {
-                    //k is u, u2, u'
-                    for (int k = 0; k < 3; k++) {
-                        if (prev < 6 * i || prev > (6 * i) + (3 * j) + 2) {
-                            value = findCOSolution(cO, (6 * i) + (3 * j) + k, depth + 1, true, best) + 1;
-                            if (value < best) {
-                                best = value;
-                                coDistTable[key] = best;
-                            }
-                        }
-                    }
-                }
+    //Applies notation at the cubie level
+    static boolean doAlgorithm(String alg) {
+        String[] notation = alg.split(" ");
+        int[] moves = new int[notation.length];
+        int val;
+        for (int i = 0; i < notation.length; i++) {
+            val = switch (notation[i]) {
+                case "U" -> 0;
+                case "U2" -> 1;
+                case "U'" -> 2;
+                case "D" -> 3;
+                case "D2" -> 4;
+                case "D'" -> 5;
+                case "L" -> 6;
+                case "L2" -> 7;
+                case "L'" -> 8;
+                case "R" -> 9;
+                case "R2" -> 10;
+                case "R'" -> 11;
+                case "B" -> 12;
+                case "B2" -> 13;
+                case "B'" -> 14;
+                case "F" -> 15;
+                case "F2" -> 16;
+                case "F'" -> 17;
+                default -> 18;
+            };
+            if (val == 18) {
+                return false;
+            } else {
+                moves[i] = val;
             }
         }
-        return best;
+        for (int move : moves) {
+            cO = moveCO(cO, move);
+            eO = moveEO(eO, move);
+            cP = moveCP(cP, move);
+            eP = moveEP(eP, move);
+        }
+        return true;
     }
 
-    //Edge Orientation
-    public static void iterateEO(boolean[] eO, int count) {
-        if (count < 11) {
-            eO[count] = true;
-            iterateEO(eO, count + 1);
-            eO[count] = false;
-            iterateEO(eO, count + 1);
-        } else if (count == 11) {
-            boolean parity = true;
-            for (int i = 0; i < 11; i++) {
-                if (!eO[i]) {
-                    parity = !parity;
-                }
-            }
-            eO[count] = parity;
-            if (eoDistTable[generateEOKey(eO)] == -1) {
-                findEOSolution(eO, 18, 0, false, 8);
-            }
-            for (int i = 0; i < 18; i++) {
-                eoMoveTable[generateEOKey(eO)][i] = generateEOKey(moveEO(eO, i));
-            }
-        }
-    }
-
-    public static int generateEOKey(boolean[] eO) {
-        int tally = 0;
-        for (int i = 0; i < 11; i++) {
-            if (!eO[i]) {
-                tally += (int) (Math.pow(2, i));
-            }
-        }
-        return tally;
-    }
-
-    public static int findEOSolution(boolean[] eO, int prev, int depth, boolean move, int best) {
-        if (move) {
-            eO = moveEO(eO, prev);
-        }
-
-        int key = generateEOKey(eO);
-        if(eoDistTable[key] != -1) {
-            //distance of current state
-            return eoDistTable[key];
-        }
-
-        int value;
-        if (depth < best) {
-            //i is ud, lr, bf
-            for (int i = 0; i < 3; i++) {
-                //j is ulb, drf
-                for (int j = 0; j < 2; j++) {
-                    //k is u, u2, u'
-                    for (int k = 0; k < 3; k++) {
-                        if (prev < 6 * i || prev > (6 * i) + (3 * j) + 2) {
-                            value = findEOSolution(eO, (6 * i) + (3 * j) + k, depth + 1, true, best) + 1;
-                            if (value < best) {
-                                best = value;
-                                eoDistTable[key] = best;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return best;
-    }
-
-    //Equator Orientation
-    public static void iterateEqO() {
-        for(int i = 0; i < 9; i++) {
-            for(int j = i + 1; j < 10; j++) {
-                for(int k = j + 1; k < 11; k++) {
-                    for(int l = k + 1; l < 12; l++) {
-                        boolean[] eq = new boolean[] {false, false, false, false, false, false, false, false, false, false, false, false};
-                        eq[i] = true;
-                        eq[j] = true;
-                        eq[k] = true;
-                        eq[l] = true;
-                        for (int m = 0; m < 18; m++) {
-                            eqoMoveTable[generateEqOKey(eq)][m] = generateEqOKey(moveEQO(eq, m));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    public static int generateEqOKey(boolean[] eq) {
-        int seen = 0;
-        int tally = 0;
-        for(int i = 0; i < 12; i++) {
-            if (eq[i]) {
-                seen++;
-            } else if (seen > 0) {
-                int num = 1;
-                int den = 1;
-                for(int r = 0; r < seen - 1; r++) {
-                    num *= i - r;
-                    den *= r + 1;
-                }
-                tally += num/den;
-            }
-        }
-        return tally;
-    }
-
-    //Corner & Edge Permutation
-    public static void iterateP(int[] p, int count) {
-        if (count > 0) {
-            for (int i = 0; i < count + 1; i++) {
-                int[] newP = p.clone();
-                int temp = newP[count - i];
-                for (int j = 0; j < i; j++) {
-                    newP[count - i + j] = newP[count - i + j + 1];
-                }
-                newP[count] = temp;
-                iterateP(newP, count - 1);
-            }
-        } else {
-            if (cpDistTable[generatePKey(p)] == -1) {
-                findCPSolution(p, 18, 0, false, 11);
-            }
-            if (epDistTable[generatePKey(p)] == -1) {
-                findEPSolution(p, 18, 0, false, 9);
-            }
-            for(int i = 0; i < 6; i++) {
-                cpMoveTable[generatePKey(p)][i] = generatePKey(moveCP(p, i));
-                epMoveTable[generatePKey(p)][i] = generatePKey(condenseEP(moveEP(extendEP(p), i)));
-            }
-            for(int i = 0; i < 4; i++) {
-                cpMoveTable[generatePKey(p)][6 + i] = generatePKey(moveCP(p, (3 * i) + 7));
-                epMoveTable[generatePKey(p)][6 + i] = generatePKey(condenseEP(moveEP(extendEP(p), (3 * i) + 7)));
-            }
-        }
-    }
-
-    public static int generatePKey(int[] p) {
-        int tally = 0;
-        for (int i = 0; i < p.length; i++) {
-            int seen = 0;
-            for (int j = 0; j < i; j++) {
-                if (p[j] > p[i]) {
-                    seen++;
-                }
-            }
-            for (int j = 0; j < i; j++) {
-                seen *= j + 1;
-            }
-            tally += seen;
-        }
-        return tally;
-    }
-
-    //Pruning
-    public static int findCPSolution(int[] cP, int prev, int depth, boolean move, int best) {
-        if (move) {
-            cP = moveCP(cP, prev);
-        }
-
-        int key = generatePKey(cP);
-        if(cpDistTable[key] != -1) {
-            //distance of current state
-            return cpDistTable[key];
-        }
-
-        if (depth < best) {
-            //iterate through moves U U2 U' D D2 D' L2 R2 B2 F2
-            //iterate through moves 0 1  2  3 4  5  6  7  8  9
-            for (int i = 0; i < 2; i++) {
-                for (int k = 0; k < 3; k++) {
-                    if (prev > (i * 3) + 2) {
-                        int value = findCPSolution(cP, (i * 3) + k, depth + 1, true, best) + 1;
-                        if (value < best) {
-                            best = value;
-                            cpDistTable[key] = best;
-                        }
-                    }
-                }
-                for (int k = 0; k < 2; k++) {
-                    if (prev < 6 + (i * 2) || prev > 6 + (i * 2) + k) {
-                        int value = findCPSolution(cP, 6 + (i * 2) + k, depth + 1, true, best) + 1;
-                        if (value < best) {
-                            best = value;
-                            cpDistTable[key] = best;
-                        }
-                    }
-                }
-            }
-        }
-        return best;
-    }
-
-    public static int findEPSolution(int[] eP, int prev, int depth, boolean move, int best) {
-        if (move) {
-            eP = condenseEP(moveEP(extendEP(eP), prev));
-        }
-
-        int key = generatePKey(eP);
-        if(epDistTable[key] != -1) {
-            //distance of current state
-            return epDistTable[key];
-        }
-
-        if (depth < best) {
-            //iterate through moves U U2 U' D D2 D' L2 R2 B2 F2
-            //iterate through moves 0 1  2  3 4  5  6  7  8  9
-            for (int i = 0; i < 2; i++) {
-                for (int k = 0; k < 3; k++) {
-                    if (prev > (i * 3) + 2) {
-                        int value = findEPSolution(eP, (i * 3) + k, depth + 1, true, best) + 1;
-                        if (value < best) {
-                            best = value;
-                            epDistTable[key] = best;
-                        }
-                    }
-                }
-                for (int k = 0; k < 2; k++) {
-                    if (prev < 6 + (i * 2) || prev > 6 + (i * 2) + k) {
-                        int value = findEPSolution(eP, 6 + (i * 2) + k, depth + 1, true, best) + 1;
-                        if (value < best) {
-                            best = value;
-                            epDistTable[key] = best;
-                        }
-                    }
-                }
-            }
-        }
-        return best;
-    }
-
-    //Equator Permutation
-    public static void iterateEqP(int[] eqP, int count) {
-        if (count > 0) {
-            for (int i = 0; i < count + 1; i++) {
-                int[] newP = eqP.clone();
-                int temp = newP[count - i];
-                for (int j = 0; j < i; j++) {
-                    newP[count - i + j] = newP[count - i + j + 1];
-                }
-                newP[count] = temp;
-                iterateEqP(newP, count - 1);
-            }
-        } else {
-            for(int i = 0; i < 6; i++) {
-                eqpMoveTable[generatePKey(eqP)][i] = generatePKey(moveEQP(eqP, i));
-            }
-            for(int i = 0; i < 4; i++) {
-                eqpMoveTable[generatePKey(eqP)][6 + i] = generatePKey(moveEQP(eqP, (3 * i) + 7));
-            }
-        }
-    }
-
-    //import tables
-    public static int[] importDistanceTable(String fileName, int size) {
-        int[] distTable = new int[size];
-        try {
-            BufferedReader reader = new BufferedReader(new FileReader(fileName));
-            String line;
-            int count = 0;
-            while ((line = reader.readLine()) != null) {
-                distTable[count] = Integer.parseInt(line);
-                count++;
-            }
-            reader.close();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        return distTable;
-    }
-
-    public static int[][] importMoveTable(String fileName, int size, int moveSet) {
-        int[][] moveTable = new int[size][moveSet];
-        try {
-            BufferedReader reader = new BufferedReader(new FileReader(fileName));
-            reader.readLine();
-            for (int i = 0; i < size; i++) {
-                for (int j = 0; j < moveSet; j++) {
-                    moveTable[i][j] = Integer.parseInt(reader.readLine());
-                }
-            }
-            reader.close();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        return moveTable;
-    }
-
-    //create tables
-    public static void createDistanceTable(String fileName, int[] table) {
-        try {
-            BufferedWriter writer = new BufferedWriter(new FileWriter(fileName));
-            writer.write("0");
-            for (int i = 1; i < table.length; i++) {
-                writer.write("\n" + table[i]);
-            }
-            writer.close();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public static void createMoveTable(String fileName, int[][] table, int size, int moveSet) {
-        try {
-            BufferedWriter writer = new BufferedWriter(new FileWriter(fileName));
-            for (int i = 0; i < size; i++) {
-                for (int j = 0; j < moveSet; j++) {
-                    writer.write("\n" + table[i][j]);
-                }
-            }
-            writer.close();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-
-    //move pieces
-    public static int[] moveCO(int[] cO, int move) {
-        int[] newCO = new int[8];
-        int[] perm = getCornerCycle(move);
-        int[] twist = switch (move) {
-            case 6, 8 -> new int[] {2, 0, 1, 0, 1, 0, 2, 0}; //l & l'
-            case 9, 11 -> new int[] {0, 1, 0, 2, 0, 2, 0, 1}; //r & r'
-            case 12, 14 -> new int[] {1, 2, 0, 0, 2, 1, 0, 0}; //b & b'
-            case 15, 17 -> new int[] {0, 0, 2, 1, 0, 0, 1, 2}; //f & f'
-            default -> new int[] {0, 0, 0, 0, 0, 0, 0, 0};
-        };
-        for (int i = 0; i < 8; i++) {
-            newCO[i] = ((cO[perm[i]] + twist[i]) % 3);
-        }
-        return newCO;
-    }
-
-    public static boolean[] moveEO(boolean[] eO, int move) {
-        boolean[] newEO = new boolean[12];
-        int[] perm = getEdgeCycle(move);
-        boolean[] flip = switch (move) {
-            case 12, 14 -> new boolean[] {false, true, true, true, false, false, true, true, false, true, true, true}; //b & b'
-            case 15, 17 -> new boolean[] {true, true, true, false, true, true, false, false, true, true, true, false}; //f & f'
-            default -> new boolean[] {true, true, true, true, true, true, true, true, true, true, true, true};
-        };
-        for (int i = 0; i < 12; i++) {
-            newEO[i] = eO[perm[i]] == flip[i];
-        }
-        return newEO;
-    }
-
-    public static boolean[] moveEQO(boolean[] eqO, int move) {
-        boolean[] newEqO = new boolean[12];
-        int[] perm = getEdgeCycle(move);
-        for (int i = 0; i < 12; i++) {
-            newEqO[i] = eqO[perm[i]];
-        }
-        return newEqO;
-    }
-
-    public static int[] moveCP(int[] cP, int move) {
-        int[] newCP = new int[8];
-        int[] perm = getCornerCycle(move);
-        for (int i = 0; i < 8; i++) {
-            newCP[i] = cP[perm[i]];
-        }
-        return newCP;
-    }
-
-    public static int[] moveEP(int[] eP, int move) {
-        int[] newEP = new int[12];
-        int[] perm = getEdgeCycle(move);
-        for (int i = 0; i < 12; i++) {
-            newEP[i] = eP[perm[i]];
-        }
-        return newEP;
-    }
-
-    public static int[] moveEQP(int[] eqP, int move) {
-        int[] newEQP = new int[4];
-        int[] perm = getEdgeCycle(move);
-        for (int i = 0; i < 4; i++) {
-            newEQP[i] = eqP[perm[i + 4] - 4];
-        }
-        return newEQP;
-    }
-
-    public static int[] condenseEP(int[] eP) {
-        return new int[] {eP[0], eP[1], eP[2], eP[3], eP[8], eP[9], eP[10], eP[11]};
-    }
-
-    public static int[] extendEP(int[] eP) {
-        return new int[] {eP[0], eP[1], eP[2], eP[3], 4, 5, 6, 7, eP[4], eP[5], eP[6], eP[7]};
-    }
-
-    public static int[] getEqP(int[] eP) {
-        return new int[] {eP[4], eP[5], eP[6], eP[7]};
-    }
-
-    public static int[] getCornerCycle(int move) {
-        return switch (move) {
-            case 0 -> new int[] {2, 0, 3, 1, 4, 5, 6, 7}; //u
-            case 1 -> new int[] {3, 2, 1, 0, 4, 5, 6, 7}; //u2
-            case 2 -> new int[] {1, 3, 0, 2, 4, 5, 6, 7}; //u'
-            case 3 -> new int[] {0, 1, 2, 3, 5, 7, 4, 6}; //d
-            case 4 -> new int[] {0, 1, 2, 3, 7, 6, 5, 4}; //d2
-            case 5 -> new int[] {0, 1, 2, 3, 6, 4, 7, 5}; //d'
-            case 6 -> new int[] {4, 1, 0, 3, 6, 5, 2, 7}; //l
-            case 7 -> new int[] {6, 1, 4, 3, 2, 5, 0, 7}; //l2
-            case 8 -> new int[] {2, 1, 6, 3, 0, 5, 4, 7}; //l'
-            case 9 -> new int[] {0, 3, 2, 7, 4, 1, 6, 5}; //r
-            case 10 -> new int[] {0, 7, 2, 5, 4, 3, 6, 1}; //r2
-            case 11 -> new int[] {0, 5, 2, 1, 4, 7, 6, 3}; //r'
-            case 12 -> new int[] {1, 5, 2, 3, 0, 4, 6, 7}; //b
-            case 13 -> new int[] {5, 4, 2, 3, 1, 0, 6, 7}; //b2
-            case 14 -> new int[] {4, 0, 2, 3, 5, 1, 6, 7}; //b'
-            case 15 -> new int[] {0, 1, 6, 2, 4, 5, 7, 3}; //f
-            case 16 -> new int[] {0, 1, 7, 6, 4, 5, 3, 2}; //f2
-            case 17 -> new int[] {0, 1, 3, 7, 4, 5, 2, 6}; //f'
-            default -> new int[] {0, 1, 2, 3, 4, 5, 6, 7};
-        };
-    }
-
-    public static int[] getEdgeCycle(int move) {
-        return switch (move) {
-            case 0 -> new int[] {1, 3, 0, 2, 4, 5, 6, 7, 8, 9, 10, 11}; //u
-            case 1 -> new int[] {3, 2, 1, 0, 4, 5, 6, 7, 8, 9, 10, 11}; //u2
-            case 2 -> new int[] {2, 0, 3, 1, 4, 5, 6, 7, 8, 9, 10, 11}; //u'
-            case 3 -> new int[] {0, 1, 2, 3, 4, 5, 6, 7, 10, 8, 11, 9}; //d
-            case 4 -> new int[] {0, 1, 2, 3, 4, 5, 6, 7, 11, 10, 9, 8}; //d2
-            case 5 -> new int[] {0, 1, 2, 3, 4, 5, 6, 7, 9, 11, 8, 10}; //d'
-            case 6 -> new int[] {0, 4, 2, 3, 9, 5, 1, 7, 8, 6, 10, 11}; //l
-            case 7 -> new int[] {0, 9, 2, 3, 6, 5, 4, 7, 8, 1, 10, 11}; //l2
-            case 8 -> new int[] {0, 6, 2, 3, 1, 5, 9, 7, 8, 4, 10, 11}; //l'
-            case 9 -> new int[] {0, 1, 7, 3, 4, 2, 6, 10, 8, 9, 5, 11}; //r
-            case 10 -> new int[] {0, 1, 10, 3, 4, 7, 6, 5, 8, 9, 2, 11}; //r2
-            case 11 -> new int[] {0, 1, 5, 3, 4, 10, 6, 2, 8, 9, 7, 11}; //r'
-            case 12 -> new int[] {5, 1, 2, 3, 0, 8, 6, 7, 4, 9, 10, 11}; //b
-            case 13 -> new int[] {8, 1, 2, 3, 5, 4, 6, 7, 0, 9, 10, 11}; //b2
-            case 14 -> new int[] {4, 1, 2, 3, 8, 0, 6, 7, 5, 9, 10, 11}; //b'
-            case 15 -> new int[] {0, 1, 2, 6, 4, 5, 11, 3, 8, 9, 10, 7}; //f
-            case 16 -> new int[] {0, 1, 2, 11, 4, 5, 7, 6, 8, 9, 10, 3}; //f2
-            case 17 -> new int[] {0, 1, 2, 7, 4, 5, 3, 11, 8, 9, 10, 6}; //f'
-            default -> new int[] {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
-        };
-    }
-
-    public static void scramble() {
+    //Scrambles the cube at the cubie level
+    static void scramble() {
         Random rnd = new Random();
 
         //Corners
@@ -761,14 +189,10 @@ public class Main {
             eP[0] = eP[1];
             eP[1] = temp;
         }
-
-        //Update eqO
-        for (int i = 0; i < 12; i++) {
-            eqO[i] = (4 <= eP[i] && eP[i] <= 7);
-        }
     }
 
-    public static void drawState() {
+    //Draws the state of the cube
+    static void drawState() {
         String[] state = new String[48];
         String[] cornerColours = new String[3];
         for (int i = 0; i < 8; i++) {
@@ -823,34 +247,631 @@ public class Main {
         System.out.println("     " + state[12] + state[40] + state[15]);
     }
 
+    //Creates helpers array from eP
+    static int[][] getHelpers() {
+        int[][] helpers = new int[3][4];
+        for (int i = 0; i < 12; i++) {
+            switch (eP[i]) {
+                case 0: helpers[1][0] = i;
+                    break;
+                case 1: helpers[2][0] = i;
+                    break;
+                case 2: helpers[2][1] = i;
+                    break;
+                case 3: helpers[1][1] = i;
+                    break;
+                case 4: helpers[0][0] = i;
+                    break;
+                case 5: helpers[0][1] = i;
+                    break;
+                case 6: helpers[0][2] = i;
+                    break;
+                case 7: helpers[0][3] = i;
+                    break;
+                case 8: helpers[1][2] = i;
+                    break;
+                case 9: helpers[2][2] = i;
+                    break;
+                case 10: helpers[2][3] = i;
+                    break;
+                case 11: helpers[1][3] = i;
+                    break;
+            }
+        }
+        return helpers;
+    }
+
+    //Switches the DR axis
+    static void nextAxis() {
+
+        //Translate Corner Pieces
+        int[] tempCO = new int[8];
+        int[] tempCP = new int[8];
+        for (int i = 0; i < 2; i++) {
+            int[] perm = getAxisCornerCycle(i);
+            for (int j = 0; j < 8; j++) {
+                tempCO[j] = cO[perm[j]];
+                tempCP[j] = cP[perm[j]];
+            }
+        }
+
+        //Translate Edge Pieces
+        boolean[] tempEO = new boolean[12];
+        int[] tempEP = new int[12];
+        for (int i = 0; i < 4; i++) {
+            int[] perm = getAxisEdgeCycle(i);
+            for (int j = 0; j < 12; j++) {
+                tempEO[j] = eO[perm[j]];
+                tempEP[j] = eP[perm[j]];
+            }
+        }
+
+        cO = tempCO.clone();
+        cP = tempCP.clone();
+        eO = tempEO.clone();
+        eP = tempEP.clone();
+
+        //Correct Corner Targets
+        for (int i = 0; i < 8; i++) {
+            cP[i] = switch (cP[i]) {
+                case 0 -> 5;
+                case 1 -> 7;
+                case 2 -> 1;
+                case 3 -> 3;
+                case 4 -> 4;
+                case 5 -> 6;
+                case 6 -> 0;
+                default -> 2;
+            };
+        }
+
+        //Correct Edge Targets
+        for (int i = 0; i < 12; i++) {
+            eP[i] = switch (eP[i]) {
+                case 0 -> 10;
+                case 1 -> 5;
+                case 2 -> 7;
+                case 3 -> 2;
+                case 4 -> 8;
+                case 5 -> 11;
+                case 6 -> 0;
+                case 7 -> 3;
+                case 8 -> 9;
+                case 9 -> 4;
+                case 10 -> 6;
+                default -> 1;
+            };
+        }
+
+        //Correct Corner Orientation
+        for (int i = 0; i < 8; i++) {
+            if ((i == 0 || i == 3 || i == 5 || i == 6) & (cP[i] == 1 || cP[i] == 2 || cP[i] == 4 || cP[i] == 7)) {
+                cO[i] = ((cO[i] + 2) % 3);
+            } else if ((i == 1 || i == 2 || i == 4 || i == 7) & (cP[i] == 0 || cP[i] == 3 || cP[i] == 5 || cP[i] == 6)) {
+                cO[i] = ((cO[i] + 1) % 3);
+            }
+        }
+
+        //Correct Edge Orientation
+        for (int i = 0; i < 12; i++) {
+            if ((i == 10 || i == 5 || i == 7 || i == 2 || i == 9 || i == 4 || i == 6 || i == 1) & (eP[i] == 8 || eP[i] == 11 || eP[i] == 0 || eP[i] == 3)) {
+                eO[i] = !eO[i];
+            } else if ((i == 8 || i == 11 || i == 0 || i == 3) & (eP[i] == 10 || eP[i] == 5 || eP[i] == 7 || eP[i] == 2 || eP[i] == 9 || eP[i] == 4 || eP[i] == 6 || eP[i] == 1)) {
+                eO[i] = !eO[i];
+            }
+        }
+    }
+
+    //Reach DR
+    static void reachDR(int cO, int eO, int eqL, int cP, int UD, int RL, int FB, int lastMove, int depth, int maxDepth, int[] moves, int axis) {
+
+        //Updates user on completion percentage if enough time has passed
+        if (System.currentTimeMillis() - time > 10000) {
+            System.out.println( (int) (100 * ((axis + ((moves[0] + ((float) moves[1] / 18)) / 18)) / 3)) + "%");
+            time = System.currentTimeMillis();
+        }
+
+        //Checks if domino has been reached
+        if (cO == 0 && eO == 0 && eqL == 425) {
+            if (depth == maxDepth || maxDepth == 9) {
+                solveDR(cP, transitionTable[RL][(FB % 24)], (UD % 24), 18, depth, moves.clone(), axis);
+            } else {
+                return;
+            }
+        }
+
+        //Prune
+        if (depth >= maxDepth || depth + coDistTable[cO] > maxDepth || depth + eoDistTable[eO] > maxDepth || (maxDepth >= optimal && maxDepth != 9)) {
+            return;
+        }
+
+        //Increase depth
+        for (int i = 0; i < 18; i++) {
+            if (doMove(lastMove, i, false)) {
+                moves[depth] = i;
+                reachDR(coMoveTable[cO][i],
+                        eoMoveTable[eO][i],
+                        eqlMoveTable[eqL][i],
+                        cpMoveTable[cP][i],
+                        helperTable[UD][i],
+                        helperTable[RL][i],
+                        helperTable[FB][i],
+                        i, depth + 1, maxDepth, moves.clone(), axis);
+            }
+        }
+    }
+
+    //Solve DR
+    static void solveDR(int cP, int eP, int eqP, int lastMove, int depth, int[] moves, int axis) {
+
+        //Checks if solved
+        boolean solved = cP == 0 && eP == 0 && eqP == 0;
+        if (solved && depth < optimal) {
+            optimal = depth;
+            solution = toNotation(moves, axis);
+            System.out.println("Solution found in " + depth + " moves: " + solution);
+            return;
+        }
+
+        //Prune
+        if (depth >= optimal - 1 || depth + cpDistTable[cP] >= optimal || depth + epDistTable[eP] >= optimal) {
+            return;
+        }
+
+        //Increase depth
+        for (int i = 0; i < 10; i++) {
+            if (doMove(lastMove, i, true)) {
+                moves[depth] = convertMoveIndex(i);
+                solveDR(cpMoveTable[cP][convertMoveIndex(i)],
+                        epMoveTable[eP][i],
+                        eqpMoveTable[eqP][i],
+                        i, depth + 1, moves.clone(), axis);
+            }
+        }
+    }
+
+    //Corner Orientation Tables
+    static int getCOKey(int[] cO) {
+        int key = 0;
+        for (int i = 0; i < 7; i++) {
+            key += (int) (cO[i] * (Math.pow(3, i)));
+        }
+        return key;
+    }
+
+    static void createCOMoveTable(int[] cO, int count) {
+        if (count < 7) {
+            cO[count] = 0;
+            createCOMoveTable(cO, count + 1);
+            cO[count] = 1;
+            createCOMoveTable(cO, count + 1);
+            cO[count] = 2;
+            createCOMoveTable(cO, count + 1);
+        } else if (count == 7) {
+            int tally = 0;
+            for (int i = 0; i < 7; i++) {
+                tally += cO[i];
+            }
+            cO[count] = (15 - tally) % 3;
+            for (int i = 0; i < 18; i++) {
+                coMoveTable[getCOKey(cO)][i] = getCOKey(moveCO(cO, i));
+            }
+        }
+    }
+
+    static void createCODistTable(int cO, int depth) {
+        if (depth < coDistTable[cO]) {
+            coDistTable[cO] = depth;
+            for (int i = 0; i < 18; i++) {
+                createCODistTable(coMoveTable[cO][i],depth + 1);
+            }
+        }
+    }
+
+    //Edge Orientation Tables
+    static int getEOKey(boolean[] eO) {
+        int tally = 0;
+        for (int i = 0; i < 11; i++) {
+            if (!eO[i]) {
+                tally += (int) (Math.pow(2, i));
+            }
+        }
+        return tally;
+    }
+
+    static void createEOMoveTable(boolean[] eO, int count) {
+        if (count < 11) {
+            eO[count] = true;
+            createEOMoveTable(eO, count + 1);
+            eO[count] = false;
+            createEOMoveTable(eO, count + 1);
+        } else if (count == 11) {
+            boolean parity = true;
+            for (int i = 0; i < 11; i++) {
+                if (!eO[i]) {
+                    parity = !parity;
+                }
+            }
+            eO[count] = parity;
+            for (int i = 0; i < 18; i++) {
+                eoMoveTable[getEOKey(eO)][i] = getEOKey(moveEO(eO, i));
+            }
+        }
+    }
+
+    static void createEODistTable(int eO, int depth) {
+        if (depth < eoDistTable[eO]) {
+            eoDistTable[eO] = depth;
+            for (int i = 0; i < 18; i++) {
+                createEODistTable(eoMoveTable[eO][i],depth + 1);
+            }
+        }
+    }
+
+    //Equator Locations Table
+    static int getEqLKey(boolean[] eq) {
+        int seen = 0;
+        int key = 0;
+        for(int i = 0; i < 12; i++) {
+            if (eq[i]) {
+                seen++;
+            } else if (seen > 0) {
+                int num = 1;
+                int den = 1;
+                for(int r = 0; r < seen - 1; r++) {
+                    num *= i - r;
+                    den *= r + 1;
+                }
+                key += num/den;
+            }
+        }
+        return key;
+    }
+
+    static void createEqLMoveTable() {
+        for(int i = 0; i < 9; i++) {
+            for(int j = i + 1; j < 10; j++) {
+                for(int k = j + 1; k < 11; k++) {
+                    for(int l = k + 1; l < 12; l++) {
+                        boolean[] eq = new boolean[12];
+                        eq[i] = true;
+                        eq[j] = true;
+                        eq[k] = true;
+                        eq[l] = true;
+                        for (int m = 0; m < 18; m++) {
+                            eqlMoveTable[getEqLKey(eq)][m] = getEqLKey(moveEqL(eq, m));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    //Corner & Edge Permutation Tables
+    static int getPKey(int[] p) {
+        int key = 0;
+        for (int i = 0; i < p.length; i++) {
+            int seen = 0;
+            for (int j = 0; j < i; j++) {
+                if (p[j] > p[i]) {
+                    seen++;
+                }
+            }
+            for (int j = 0; j < i; j++) {
+                seen *= j + 1;
+            }
+            key += seen;
+        }
+        return key;
+    }
+
+    static void createPMoveTables(int[] p, int count) {
+        if (count > 0) {
+            for (int i = 0; i < count + 1; i++) {
+                int[] newP = p.clone();
+                int temp = newP[count - i];
+                for (int j = 0; j < i; j++) {
+                    newP[count - i + j] = newP[count - i + j + 1];
+                }
+                newP[count] = temp;
+                createPMoveTables(newP, count - 1);
+            }
+        } else {
+            for(int i = 0; i < 18; i++) {
+                cpMoveTable[getPKey(p)][i] = getPKey(moveCP(p, i));
+            }
+            for(int i = 0; i < 10; i++) {
+                int[] movedP = moveEP(new int[] {p[0], p[1], p[2], p[3], 4, 5, 6, 7, p[4], p[5], p[6], p[7]}, convertMoveIndex(i));
+                int[] condensedP = new int[] {movedP[0], movedP[1], movedP[2], movedP[3], movedP[8], movedP[9], movedP[10], movedP[11]};
+                epMoveTable[getPKey(p)][i] = getPKey(condensedP);
+            }
+            createTransitionTable(p);
+        }
+    }
+
+    static void createCPDistTable(int cP, int depth) {
+        if (depth < cpDistTable[cP]) {
+            cpDistTable[cP] = depth;
+            for (int i = 0; i < 10; i++) {
+                createCPDistTable(cpMoveTable[cP][convertMoveIndex(i)],depth + 1);
+            }
+        }
+    }
+
+    static void createEPDistTable(int eP, int depth) {
+        if (depth < epDistTable[eP]) {
+            epDistTable[eP] = depth;
+            for (int i = 0; i < 10; i++) {
+                createEPDistTable(epMoveTable[eP][i],depth + 1);
+            }
+        }
+    }
+
+    //Equator Permutation Table
+    static void createEqPMoveTable(int[] eqP, int count) {
+        if (count > 0) {
+            for (int i = 0; i < count + 1; i++) {
+                int[] newP = eqP.clone();
+                int temp = newP[count - i];
+                for (int j = 0; j < i; j++) {
+                    newP[count - i + j] = newP[count - i + j + 1];
+                }
+                newP[count] = temp;
+                createEqPMoveTable(newP, count - 1);
+            }
+        } else {
+            for(int i = 0; i < 10; i++) {
+                eqpMoveTable[getPKey(eqP)][i] = getPKey(moveHelper(convertMoveIndex(i), eqP));
+            }
+        }
+    }
+
+    //Helper Table
+    static int getHelperKey(int[] helper) {
+        boolean[] locations = new boolean[12];
+        for (int i = 0; i < 4; i++) {
+            locations[helper[i]] = true;
+        }
+        return (getEqLKey(locations) * 24) + getPKey(helper);
+    }
+
+    static int[] moveHelper(int move, int[] helper) {
+        int[] ep = moveEP(new int[] {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, move);
+        for (int i = 0; i < 4; i++) {
+            for (int j = 0; j < 12; j++) {
+                if (helper[i] == ep[j]) {
+                    helper[i] = j;
+                    break;
+                }
+            }
+        }
+        return helper;
+    }
+
+    static void createHelperTable() {
+        for (int i = 0; i < 12; i++) {
+            for (int j = 0; j < 12; j++) {
+                if (j == i)
+                    continue;
+                for (int k = 0; k < 12; k++) {
+                    if (k == i || k == j)
+                        continue;
+                    for (int l = 0; l < 12; l++) {
+                        if (l == i || l == j || l == k)
+                            continue;
+                        int[] helper = new int[] {i, j, k, l};
+                        for (int move = 0; move < 18; move++) {
+                            helperTable[getHelperKey(helper)][move] = getHelperKey(moveHelper(move, helper));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    //Transition table
+    static void createTransitionTable(int[] p) {
+        int[] RL = new int[4];
+        int[] FB = new int[4];
+        for (int i = 0; i < 8; i++) {
+            int val = i;
+            if (i > 3)
+                val += 4;
+            switch (p[i]) {
+                case 0: RL[0] = val;
+                    break;
+                case 1: FB[0] = val;
+                    break;
+                case 2: FB[1] = val;
+                    break;
+                case 3: RL[1] = val;
+                    break;
+                case 4: RL[2] = val;
+                    break;
+                case 5: FB[2] = val;
+                    break;
+                case 6: FB[3] = val;
+                    break;
+                case 7: RL[3] = val;
+                    break;
+            }
+        }
+        transitionTable[getHelperKey(RL)][getPKey(FB)] = getPKey(p);
+    }
+
+    //Move pieces at the cubie level
+    static int[] getCornerCycle(int move) {
+        return switch (move) {
+            case 0 -> new int[] {2, 0, 3, 1, 4, 5, 6, 7}; //u
+            case 1 -> new int[] {3, 2, 1, 0, 4, 5, 6, 7}; //u2
+            case 2 -> new int[] {1, 3, 0, 2, 4, 5, 6, 7}; //u'
+            case 3 -> new int[] {0, 1, 2, 3, 5, 7, 4, 6}; //d
+            case 4 -> new int[] {0, 1, 2, 3, 7, 6, 5, 4}; //d2
+            case 5 -> new int[] {0, 1, 2, 3, 6, 4, 7, 5}; //d'
+            case 6 -> new int[] {4, 1, 0, 3, 6, 5, 2, 7}; //l
+            case 7 -> new int[] {6, 1, 4, 3, 2, 5, 0, 7}; //l2
+            case 8 -> new int[] {2, 1, 6, 3, 0, 5, 4, 7}; //l'
+            case 9 -> new int[] {0, 3, 2, 7, 4, 1, 6, 5}; //r
+            case 10 -> new int[] {0, 7, 2, 5, 4, 3, 6, 1}; //r2
+            case 11 -> new int[] {0, 5, 2, 1, 4, 7, 6, 3}; //r'
+            case 12 -> new int[] {1, 5, 2, 3, 0, 4, 6, 7}; //b
+            case 13 -> new int[] {5, 4, 2, 3, 1, 0, 6, 7}; //b2
+            case 14 -> new int[] {4, 0, 2, 3, 5, 1, 6, 7}; //b'
+            case 15 -> new int[] {0, 1, 6, 2, 4, 5, 7, 3}; //f
+            case 16 -> new int[] {0, 1, 7, 6, 4, 5, 3, 2}; //f2
+            case 17 -> new int[] {0, 1, 3, 7, 4, 5, 2, 6}; //f'
+            default -> new int[] {0, 1, 2, 3, 4, 5, 6, 7};
+        };
+    }
+
+    static int[] getEdgeCycle(int move) {
+        return switch (move) {
+            case 0 -> new int[] {1, 3, 0, 2, 4, 5, 6, 7, 8, 9, 10, 11}; //u
+            case 1 -> new int[] {3, 2, 1, 0, 4, 5, 6, 7, 8, 9, 10, 11}; //u2
+            case 2 -> new int[] {2, 0, 3, 1, 4, 5, 6, 7, 8, 9, 10, 11}; //u'
+            case 3 -> new int[] {0, 1, 2, 3, 4, 5, 6, 7, 10, 8, 11, 9}; //d
+            case 4 -> new int[] {0, 1, 2, 3, 4, 5, 6, 7, 11, 10, 9, 8}; //d2
+            case 5 -> new int[] {0, 1, 2, 3, 4, 5, 6, 7, 9, 11, 8, 10}; //d'
+            case 6 -> new int[] {0, 4, 2, 3, 9, 5, 1, 7, 8, 6, 10, 11}; //l
+            case 7 -> new int[] {0, 9, 2, 3, 6, 5, 4, 7, 8, 1, 10, 11}; //l2
+            case 8 -> new int[] {0, 6, 2, 3, 1, 5, 9, 7, 8, 4, 10, 11}; //l'
+            case 9 -> new int[] {0, 1, 7, 3, 4, 2, 6, 10, 8, 9, 5, 11}; //r
+            case 10 -> new int[] {0, 1, 10, 3, 4, 7, 6, 5, 8, 9, 2, 11}; //r2
+            case 11 -> new int[] {0, 1, 5, 3, 4, 10, 6, 2, 8, 9, 7, 11}; //r'
+            case 12 -> new int[] {5, 1, 2, 3, 0, 8, 6, 7, 4, 9, 10, 11}; //b
+            case 13 -> new int[] {8, 1, 2, 3, 5, 4, 6, 7, 0, 9, 10, 11}; //b2
+            case 14 -> new int[] {4, 1, 2, 3, 8, 0, 6, 7, 5, 9, 10, 11}; //b'
+            case 15 -> new int[] {0, 1, 2, 6, 4, 5, 11, 3, 8, 9, 10, 7}; //f
+            case 16 -> new int[] {0, 1, 2, 11, 4, 5, 7, 6, 8, 9, 10, 3}; //f2
+            case 17 -> new int[] {0, 1, 2, 7, 4, 5, 3, 11, 8, 9, 10, 6}; //f'
+            default -> new int[] {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+        };
+    }
+
+    static int[] moveCO(int[] cO, int move) {
+        int[] newCO = new int[8];
+        int[] perm = getCornerCycle(move);
+        int[] twist = switch (move) {
+            case 6, 8 -> new int[] {2, 0, 1, 0, 1, 0, 2, 0}; //l & l'
+            case 9, 11 -> new int[] {0, 1, 0, 2, 0, 2, 0, 1}; //r & r'
+            case 12, 14 -> new int[] {1, 2, 0, 0, 2, 1, 0, 0}; //b & b'
+            case 15, 17 -> new int[] {0, 0, 2, 1, 0, 0, 1, 2}; //f & f'
+            default -> new int[] {0, 0, 0, 0, 0, 0, 0, 0};
+        };
+        for (int i = 0; i < 8; i++) {
+            newCO[i] = ((cO[perm[i]] + twist[i]) % 3);
+        }
+        return newCO;
+    }
+
+    static boolean[] moveEO(boolean[] eO, int move) {
+        boolean[] newEO = new boolean[12];
+        int[] perm = getEdgeCycle(move);
+        boolean[] flip = switch (move) {
+            case 12, 14 -> new boolean[] {false, true, true, true, false, false, true, true, false, true, true, true}; //b & b'
+            case 15, 17 -> new boolean[] {true, true, true, false, true, true, false, false, true, true, true, false}; //f & f'
+            default -> new boolean[] {true, true, true, true, true, true, true, true, true, true, true, true};
+        };
+        for (int i = 0; i < 12; i++) {
+            newEO[i] = eO[perm[i]] == flip[i];
+        }
+        return newEO;
+    }
+
+    static boolean[] moveEqL(boolean[] eqL, int move) {
+        boolean[] newEqL = new boolean[12];
+        int[] perm = getEdgeCycle(move);
+        for (int i = 0; i < 12; i++) {
+            newEqL[i] = eqL[perm[i]];
+        }
+        return newEqL;
+    }
+
+    static int[] moveCP(int[] cP, int move) {
+        int[] newCP = new int[8];
+        int[] perm = getCornerCycle(move);
+        for (int i = 0; i < 8; i++) {
+            newCP[i] = cP[perm[i]];
+        }
+        return newCP;
+    }
+
+    static int[] moveEP(int[] eP, int move) {
+        int[] newEP = new int[12];
+        int[] perm = getEdgeCycle(move);
+        for (int i = 0; i < 12; i++) {
+            newEP[i] = eP[perm[i]];
+        }
+        return newEP;
+    }
+
+    //Converts DR move index (0-9) to normal move index (0 - 17)
+    static int convertMoveIndex(int move) {
+        return switch (move) {
+            case 6 -> 7;
+            case 7 -> 10;
+            case 8 -> 13;
+            case 9 -> 16;
+            default -> move;
+        };
+    }
+
+    static int[] getAxisCornerCycle(int index) {
+        return switch (index) {
+            case 0 -> new int[] {6, 1, 2, 3, 4, 0, 5, 7};
+            case 1 -> new int[] {0, 2, 7, 3, 4, 5, 6, 1}; //u2
+            default -> new int[] {0, 1, 2, 3, 4, 5, 6, 7};
+        };
+
+    }
+
+    static int[] getAxisEdgeCycle(int index) {
+        return switch (index) {
+            case 0 -> new int[] {6, 1, 2, 3, 4, 5, 10, 7, 8, 9, 0, 11};
+            case 1 -> new int[] {0, 11, 2, 3, 4, 1, 6, 7, 8, 9, 10, 5};
+            case 2 -> new int[] {0, 1, 3, 7, 4, 5, 6, 2, 8, 9, 10, 11};
+            case 3 -> new int[] {0, 1, 2, 3, 9, 5, 6, 7, 4, 8, 10, 11};
+            default -> new int[] {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+        };
+    }
+
     //Converts a sequence of moves into notation
-    public static String convertToNotation(int[] moves) {
+    static String toNotation(int[] moves, int axis) {
         StringBuilder alg = new StringBuilder();
         for (int move : moves) {
             if (move == 18)
-                break;
+                continue;
             int type = move % 3;
-            switch (move - type) {
-                case 0:
-                    alg.append("U");
-                    break;
-                case 3:
-                    alg.append("D");
-                    break;
-                case 6:
-                    alg.append("L");
-                    break;
-                case 9:
-                    alg.append("R");
-                    break;
-                case 12:
-                    alg.append("B");
-                    break;
-                case 15:
-                    alg.append("F");
-                    break;
-                default:
-                    break;
+            if (axis == 0) {
+                alg.append(switch (move - type) {
+                    case 0 -> "U";
+                    case 3 -> "D";
+                    case 6 -> "L";
+                    case 9 -> "R";
+                    case 12 -> "B";
+                    case 15 -> "F";
+                    default -> "";
+                });
+            } else if (axis == 1) {
+                alg.append(switch (move - type) {
+                    case 0 -> "F";
+                    case 3 -> "B";
+                    case 6 -> "D";
+                    case 9 -> "U";
+                    case 12 -> "L";
+                    case 15 -> "R";
+                    default -> "";
+                });
+            } else {
+                alg.append(switch (move - type) {
+                    case 0 -> "R";
+                    case 3 -> "L";
+                    case 6 -> "B";
+                    case 9 -> "F";
+                    case 12 -> "D";
+                    case 15 -> "U";
+                    default -> "";
+                });
             }
             if (type == 1) {
                 alg.append("2");
@@ -862,4 +883,12 @@ public class Main {
         return alg.toString();
     }
 
+    //Skips moves which result in duplicate states
+    static boolean doMove(int lastMove, int currentMove, boolean DR) {
+        if (DR) {
+            lastMove = convertMoveIndex(lastMove);
+            currentMove = convertMoveIndex(currentMove);
+        }
+        return lastMove / 3 != currentMove / 3 && (((currentMove / 3) % 2) != 1 || lastMove / 6 != currentMove / 6);
+    }
 }
