@@ -27,7 +27,6 @@ public class Main {
     public static void main(String[] args) {
 
         createTables();
-        System.out.println(coMoveTable[450][12]);
 
         Scanner scan = new Scanner(System.in);  // Create a Scanner object
         System.out.println("Enter scramble, E.g. R U' F2 B' L2 D (typing nothing for a random scramble)");
